@@ -1,0 +1,333 @@
+/* Global Symbols */
+.global .uart_putc
+.global .uart_getc
+.global .uart0_setup
+.global .uart0
+.global _buffer_count
+.global _num_count
+.global .limpar_buffer
+
+/* Registradores */
+.equ UART0_BASE, 0x44E09000
+.equ UART0_IER, 0x44E09004
+
+/* Text Section */
+.section .text,"ax"
+         .code 32
+         .align 4
+         
+/********************************************************
+UART0 SETUP 
+********************************************************/
+.uart0_setup:
+    stmfd sp!,{r0-r1,lr}
+    
+    /* Inicializa contadores com 0 */
+    mov r2, #0
+    ldr r3, =_buffer_count
+    strb r2, [r3]
+    ldr r3, =_num_count
+    strb r2, [r3]
+
+    /* Enable UART0 */
+    ldr r0, =UART0_IER
+    ldr r1, =#(1<<0) 
+    strb r1, [r0]
+    ldr r1, =#(1<<1) 
+    strb r1, [r0]
+    
+    /* UART0 Interrupt configured as IRQ Priority 0 */
+    ldr r0, =INTC_ILR
+    ldr r1, =#0    
+    strb r1, [r0, #72]
+    
+    /* Interrupt mask */
+    ldr r0, =INTC_BASE
+    ldr r1, =#(1<<8)    
+    str r1, [r0, #0xc8] 
+    
+    ldmfd sp!,{r0-r1,pc}
+
+/********************************************************
+UART0 PUTC (Default configuration)  
+********************************************************/
+.uart_putc:
+    stmfd sp!,{r1-r2,lr}
+    ldr     r1, =UART0_BASE
+
+.wait_tx_fifo_empty:
+    ldr r2, [r1, #0x14] 
+    and r2, r2, #(1<<5)
+    cmp r2, #0
+    beq .wait_tx_fifo_empty
+
+    strb    r0, [r1]
+    ldmfd sp!,{r1-r2,pc}
+
+/********************************************************
+UART0 GETC (Default configuration)  
+********************************************************/
+.uart_getc:
+    stmfd sp!,{r1-r2,lr}
+    ldr     r1, =UART0_BASE
+
+.wait_rx_fifo:
+    ldr r2, [r1, #0x14] 
+    and r2, r2, #(1<<0)
+    cmp r2, #0
+    beq .wait_rx_fifo
+
+    ldrb    r0, [r1]
+    ldmfd sp!,{r1-r2,pc}
+
+/********************************************************
+UART0 - Lógica Principal
+********************************************************/
+.uart0:
+    stmfd sp!,{r0-r2,lr}     
+    
+    bl .uart_getc            @ Lê o caractere
+    
+    cmp r0, #'\r'            @ É um ENTER?
+    beq .trata_enter         @ Se for, pula para tratar o comando
+    
+    @ --- Se NÃO for Enter (Letras/Números) ---
+    bl .uart_putc            @ Ecoa o caractere na tela
+    bl .save                 @ Salva no buffer
+    b .fim_uart0             @ Termina
+
+.trata_enter:
+    @ --- Se FOR Enter ---
+    bl .uart0_comandos       @ Processa o comando
+    @ Não chamamos .save aqui!
+
+.fim_uart0:
+    ldmfd sp!,{r0-r2,pc}
+    
+/********************************************************
+PROCESSADOR DE COMANDOS
+********************************************************/
+.uart0_comandos:
+    stmfd sp!,{r0-r4,lr}  @ Salva contexto
+
+    ldr r0, =prox_linha
+    bl .print_string
+    
+    @ --- 1. Verifica "hello" (5 chars) ---
+    ldr r0, =comando1     
+    ldr r1, =_buffer      
+    mov r2, #5            
+    bl .memcmp
+    cmp r0, #0
+    beq .exec_hello
+
+    @ --- 2. Verifica "led on" (6 chars) ---
+    ldr r0, =comando2
+    ldr r1, =_buffer
+    mov r2, #6
+    bl .memcmp
+    cmp r0, #0
+    beq .exec_led_on
+
+    @ --- 3. Verifica "led off" (7 chars) ---
+    ldr r0, =comando3
+    ldr r1, =_buffer
+    mov r2, #7
+    bl .memcmp
+    cmp r0, #0
+    beq .exec_led_off
+
+    @ --- 4. Verifica "blink" (5 chars) ---
+    ldr r0, =comando4
+    ldr r1, =_buffer
+    mov r2, #5
+    bl .memcmp
+    cmp r0, #0
+    beq .exec_blink
+
+    @ --- 5. Verifica "led" (3 chars) ---
+    ldr r0, =comando5
+    ldr r1, =_buffer
+    mov r2, #3
+    bl .memcmp
+    cmp r0, #0
+    beq .exec_led_generic
+
+    @ --- 6. Verifica "time" (4 chars) ---
+    ldr r0, =comando6
+    ldr r1, =_buffer
+    mov r2, #4
+    bl .memcmp
+    cmp r0, #0
+    beq .exec_time
+
+    @ --- 7. Verifica "set time" (8 chars) ---
+    ldr r0, =comando7
+    ldr r1, =_buffer
+    mov r2, #8
+    bl .memcmp
+    cmp r0, #0
+    beq .exec_set_time
+
+    @ --- 8. Verifica "cache" (5 chars) ---
+    ldr r0, =comando8
+    ldr r1, =_buffer
+    mov r2, #5
+    bl .memcmp
+    cmp r0, #0
+    beq .exec_cache
+
+    @ --- 9. Verifica "goto" (4 chars) ---
+    ldr r0, =comando9
+    ldr r1, =_buffer
+    mov r2, #4
+    bl .memcmp
+    cmp r0, #0
+    beq .exec_goto
+
+    @ --- 10. Verifica "reset" (5 chars) ---
+    ldr r0, =comando10
+    ldr r1, =_buffer
+    mov r2, #5
+    bl .memcmp
+    cmp r0, #0
+    beq .exec_reset
+
+    @ --- Comando não reconhecido ---
+    ldr r0, =msg_unknown
+    bl .print_string
+    b .fim_comandos_label
+
+/* ---- HANDLERS (Ações) ---- */
+.exec_hello:
+    ldr r0, =hello
+    bl .print_string
+    b .fim_comandos_label
+
+.exec_led_on:
+    bl .led_ON          @ Chama função do gpio.s
+    b .fim_comandos_label
+
+.exec_led_off:
+    bl .led_OFF         @ Chama função do gpio.s
+    b .fim_comandos_label
+
+.exec_blink:
+    mov r0, #5          @ Passa 5 em R0 (importante usar R0)
+    bl .blink_led       @ Chama função do gpio.s
+    b .fim_comandos_label
+
+.exec_led_generic:
+    bl .led_ON          @ Exemplo: liga o led
+    b .fim_comandos_label
+
+.exec_time:
+    bl .print_time      @ Chama função do rtc.s
+    b .fim_comandos_label
+
+.exec_set_time:
+    bl .rtc_set_dummy_time  @ Chama função nova no rtc.s
+    ldr r0, =msg_time_set   @ Avisa o usuario
+    bl .print_string
+    b .fim_comandos_label
+
+.exec_cache:
+    bl .cp15_invalidate_icache  @ Chama função no cp15.s
+    ldr r0, =msg_cache          @ Avisa o usuário
+    bl .print_string
+    b .fim_comandos_label
+
+.exec_goto:
+    ldr r0, =msg_goto
+    bl .print_string
+
+    /* --- FIX: Limpa a memória antes de reiniciar --- */
+    bl .limpar_buffer
+    /* ----------------------------------------------- */
+
+    ldr r0, =0x80000000      @ Endereço de início do programa
+    bx r0                    @ Pula pra lá (agora limpo!)
+    
+
+.exec_reset:
+    b .reset        @ Chama função do wdt.s (Cuidado com o nome no wdt.s)
+
+.fim_comandos_label:
+    bl .limpar_buffer   @ Limpa o buffer para o próximo comando
+    ldmfd sp!,{r0-r4,pc} @ Retorna OK
+    
+    
+/************************************************
+ LIMPA BUFFER
+************************************************/
+.limpar_buffer:
+    ldr r3, =_buffer_count
+    mov r1, #0
+    strb r1, [r3]
+    
+    ldr r3, =_num_count
+    mov r1, #0
+    strb r1, [r3]
+    
+    bx lr  @ Retorno simples (Leaf Function)
+
+/************************************************
+ SAVE - Salva caractere no buffer
+************************************************/
+.save:
+    stmfd sp!,{r1-r3,lr}
+
+    @ 1. Carrega o contador
+    ldr r3, =_buffer_count
+    ldrb r2, [r3]
+
+    @ 2. Segurança: limite de 15 chars
+    cmp r2, #15
+    bge .fim_save_real
+
+    @ 3. Salva o caractere
+    ldr r1, =_buffer
+    strb r0, [r1, r2]
+
+    @ 4. Atualiza o contador
+    add r2, r2, #1
+    strb r2, [r3]
+
+.fim_save_real:
+    ldmfd sp!,{r1-r3,pc}
+    
+/*********************************************************/
+
+hello:         .asciz "Hello world!!!\n\r"
+msg_time_set:  .asciz "Hora ajustada para 10:00:00\n\r"
+msg_cache:     .asciz "Cache invalidado.\n\r"
+msg_goto:      .asciz "Pulando para 0x80000000...\n\r"
+msg_unknown:   .asciz "Comando desconhecido\n\r"
+prox_linha:    .asciz "\n\r"
+
+/* Strings de COMPARAÇÃO (Sem \n\r para bater com o buffer) */
+comando1:      .asciz "hello"
+comando2:      .asciz "led on"
+comando3:      .asciz "led off"
+comando4:      .asciz "blink"
+comando5:      .asciz "led"
+comando6:      .asciz "time"
+comando7:      .asciz "set time"
+comando8:      .asciz "cache"
+comando9:      .asciz "goto"
+comando10:     .asciz "reset"
+
+
+/* Data Section */
+.section .data
+.align 4
+
+/* BSS Section */
+.section .bss
+.align 4
+
+.equ BUFFER_SIZE, 16
+_num: .fill BUFFER_SIZE
+_num_count: .fill 4
+_buffer: .fill BUFFER_SIZE
+_buffer_count: .fill 4
