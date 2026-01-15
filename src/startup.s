@@ -279,7 +279,9 @@ dump_separator:          .asciz "  :  "
 
 /* BSS Section */
 .section .bss
+
 .align 4
+
 
 .equ BUFFER_SIZE, 16
 _buffer: .fill BUFFER_SIZE

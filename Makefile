@@ -4,7 +4,7 @@ SRC_DIR = src
 OBJ_DIR = obj
 BIN_DIR = bin
 	
-src_files = startup.s uart.s utils.s wdt.s cp15.s gpio.s rtc.s
+src_files = startup.s uart.s utils.s wdt.s cp15.s gpio.s rtc.s rtc_dummy.s
 
 OBJS = $(addprefix $(OBJ_DIR)/, $(src_files:.s=.o))
 

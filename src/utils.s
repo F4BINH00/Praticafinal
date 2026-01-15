@@ -356,13 +356,3 @@ Imprime n caracteres de uma string
 	sub r0,r0, #0x30
 	bl .volta
     
-    
-    
-    
-    
-    
-    
-    
-    
-
-
