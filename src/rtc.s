@@ -128,50 +128,33 @@ RTC SETUP
     ldmfd sp!, {r0-r2, pc}
 
 /********************************************************
- Set Dummy Time - CORRIGIDO (Lógica AM335x)
+ Set Dummy Time 
 ********************************************************/
 .rtc_set_dummy_time:
-    stmfd sp!,{r0-r2,lr}
-    
-    /* 1. Desabilita Interrupções Globais */
-    cpsid i
+    push {r0-r2, lr}      @ Salva o contexto e o endereço de retorno
 
-    ldr r0, =RTC_BASE
-    
-    /* 2. Destravar proteção */
+    ldr r0, =RTC_BASE     @ Endereço Base do RTC (0x44E3E000)
+
+    @ 1. Destravar proteção (KICK registers)
     ldr r1, =0x83E70B13
     str r1, [r0, #0x6C] 
     ldr r1, =0x95A4F1E0
     str r1, [r0, #0x70] 
 
-    /* 3. PARAR O RTC (Bit 0=1 é STOP) */
-    ldr r1, [r0, #0x40]
-    orr r1, r1, #1       @ <--- FIX: ORR para PARAR
-    str r1, [r0, #0x40]
-
-    /* 4. Check BUSY (Segurança) */
-    .wait_busy_loop:
-    ldr r1, [r0, #0x40]   @ RTC_STATUS
-    and r1, r1, #1        @ BUSY
-    cmp r1, #0
-    bne .wait_busy_loop
-
-    /* 5. Escrever Hora: 10:00:00 */
+    @ 2. ESCREVER DIRETO (Sem verificar BUSY, sem STOP)
+    @ Isso elimina qualquer chance de loop infinito aqui.
+    
     mov r1, #0x00
-    str r1, [r0, #0x00] 
-    str r1, [r0, #0x04] 
-    mov r1, #0x10
-    str r1, [r0, #0x08] 
+    str r1, [r0, #0x00]   @ Segundos = 00
+    str r1, [r0, #0x04]   @ Minutos  = 00
+    
+    mov r1, #0x12         
+    str r1, [r0, #0x08]   @ Horas    = 12 (Vamos mudar pra 12h pra diferenciar)
 
-    /* 6. LIGAR O RTC (Bit 0=0 é RUN) */
-    ldr r1, [r0, #0x40]
-    bic r1, r1, #1       @ <--- FIX: BIC para RODAR
-    str r1, [r0, #0x40]
+    @ 3. (Opcional) Travar novamente ou deixar assim.
+    @ O importante é que aqui não tem onde travar.
 
-    /* 7. Reabilita Interrupções */
-    cpsie i
-
-    ldmfd sp!,{r0-r2,pc}
+    pop {r0-r2, pc}       @ Retorna imediatamente
 
 /* Helpers */
 .uart_to_rtc:
